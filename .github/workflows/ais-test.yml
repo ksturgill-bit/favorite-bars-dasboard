@@ -4,11 +4,11 @@ on:
 jobs:
   test-ais:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - name: Install WebSocket client
         run: npm install --no-save ws
-      - name: Listen for Princess ships (90 seconds)
+      - name: Listen for Princess ships (600 seconds)
         env:
           AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
         run: |
@@ -21,9 +21,9 @@ jobs:
           let confirmed=false, count=0;
           const timer=setTimeout(()=>{
             console.log(`TEST COMPLETE: subscription ${confirmed?'confirmed':'not confirmed'}; ${count} position reports received for the two ships.`);
-            if (count===0) console.log('No reports during this 90-second window is not proof of a failure.');
+            if (count===0) console.log('No reports during this 600-second window is not proof of a failure.');
             ws.close(); process.exit(confirmed?0:1);
-          },90000);
+          },600000);
           ws.on('open',()=>{
             console.log('WebSocket connected; sending filtered subscription.');
             ws.send(JSON.stringify({APIKey:key,BoundingBoxes:[[[-90,-180],[90,180]]],FiltersShipMMSI:Object.keys(ships),FilterMessageTypes:['PositionReport']}));
