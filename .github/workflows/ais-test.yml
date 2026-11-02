@@ -1,0 +1,44 @@
+name: AIS Ship Connection Test
+on:
+  workflow_dispatch:
+jobs:
+  test-ais:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Install WebSocket client
+        run: npm install --no-save ws
+      - name: Listen for Princess ships (90 seconds)
+        env:
+          AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
+        run: |
+          node <<'JS'
+          const WebSocket = require('ws');
+          const key = process.env.AISSTREAM_API_KEY;
+          if (!key) { console.error('ERROR: AISSTREAM_API_KEY secret missing'); process.exit(1); }
+          const ships = {'310791000':'Enchanted Princess','310869000':'Star Princess'};
+          const ws = new WebSocket('wss://stream.aisstream.io/v0/stream', {perMessageDeflate:true});
+          let confirmed=false, count=0;
+          const timer=setTimeout(()=>{
+            console.log(`TEST COMPLETE: subscription ${confirmed?'confirmed':'not confirmed'}; ${count} position reports received for the two ships.`);
+            if (count===0) console.log('No reports during this 90-second window is not proof of a failure.');
+            ws.close(); process.exit(confirmed?0:1);
+          },90000);
+          ws.on('open',()=>{
+            console.log('WebSocket connected; sending filtered subscription.');
+            ws.send(JSON.stringify({APIKey:key,BoundingBoxes:[[[-90,-180],[90,180]]],FiltersShipMMSI:Object.keys(ships),FilterMessageTypes:['PositionReport']}));
+          });
+          ws.on('message',buf=>{
+            let msg; try {msg=JSON.parse(buf.toString())}catch(e){return;}
+            if(msg.MessageType==='SubscriptionConfirmation') {confirmed=true; console.log('Subscription confirmed by AISStream.');return;}
+            if(msg.MessageType==='Error'||msg.MessageType==='SubscriptionError') {console.error('Subscription error:',JSON.stringify(msg).slice(0,600));return;}
+            const mmsi=String(msg.MetaData?.MMSI||msg.Message?.PositionReport?.UserID||'');
+            if(msg.MessageType==='PositionReport' && ships[mmsi]) {
+              count++;
+              const p=msg.Message.PositionReport;
+              console.log(`${ships[mmsi]}: lat=${p.Latitude} lon=${p.Longitude} AIS timestamp=${msg.MetaData?.time_utc||'not supplied'}`);
+            }
+          });
+          ws.on('error',e=>{console.error('Connection error:',e.message);clearTimeout(timer);process.exit(1)});
+          ws.on('close',(code)=>{console.log('Connection closed:',code); if(!confirmed){clearTimeout(timer);process.exit(1)}});
+          JS
