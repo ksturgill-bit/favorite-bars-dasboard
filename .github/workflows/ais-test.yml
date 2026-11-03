@@ -35,8 +35,7 @@ jobs:
             const p = msg.Message?.[msg.MessageType]; const mmsi = String(msg.MetaData?.MMSI ?? p?.UserID ?? '');
             if (ships[mmsi] && [   'PositionReport',   'StandardClassBPositionReport',   'ExtendedClassBPositionReport' ].includes(msg.MessageType)) {
               count++;
-              const p=msg.Message[msg.MessageType];
-              console.log(`${ships[mmsi]}: lat=${p.Latitude} lon=${p.Longitude} AIS timestamp=${msg.MetaData?.time_utc||'not supplied'}`);
+                            console.log(`${ships[mmsi]}: lat=${p.Latitude} lon=${p.Longitude} AIS timestamp=${msg.MetaData?.time_utc||'not supplied'}`);
             }
           });
           ws.on('error',e=>{console.error('Connection error:',e.message);clearTimeout(timer);process.exit(1)});
