@@ -1,0 +1,96 @@
+
+name: AIS Traffic Diagnostic
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-traffic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Install WebSocket client
+        run: npm install --no-save ws
+
+      - name: Listen for Rotterdam AIS traffic
+        env:
+          AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
+        run: |
+          node <<'JS'
+          const WebSocket = require('ws');
+          const key = process.env.AISSTREAM_API_KEY;
+          if (!key) {
+            console.error('Missing AISSTREAM_API_KEY');
+            process.exit(1);
+          }
+
+          const ws = new WebSocket(
+            'wss://stream.aisstream.io/v0/stream'
+          );
+
+          let connected = false;
+          let count = 0;
+          const types = {};
+
+          ws.on('open', () => {
+            console.log('Connected to AISStream');
+            ws.send(JSON.stringify({
+              APIKey: key,
+              BoundingBoxes: [
+                [[51.85, 3.9], [52.05, 4.6]]
+              ],
+              FilterMessageTypes: ['PositionReport']
+            }));
+          });
+
+          ws.on('message', raw => {
+            let msg;
+            try {
+              msg = JSON.parse(raw.toString());
+            } catch {
+              return;
+            }
+
+            if (msg.MessageType === 'SubscriptionConfirmation') {
+              connected = true;
+              console.log('Subscription confirmed');
+              return;
+            }
+
+            if (msg.MessageType === 'Error' ||
+                msg.MessageType === 'SubscriptionError') {
+              console.error('AIS error:', JSON.stringify(msg));
+              return;
+            }
+
+            types[msg.MessageType] =
+              (types[msg.MessageType] || 0) + 1;
+
+            if (msg.MessageType === 'PositionReport') {
+              count++;
+              if (count <= 5) {
+                const p = msg.Message?.PositionReport;
+                console.log(
+                  'POSITION:',
+                  'MMSI=', msg.MetaData?.MMSI,
+                  'LAT=', p?.Latitude,
+                  'LON=', p?.Longitude
+                );
+              }
+            }
+          });
+
+          ws.on('error', e => {
+            console.error('Connection error:', e.message);
+            process.exitCode = 1;
+          });
+
+          setTimeout(() => {
+            console.log('TEST COMPLETE');
+            console.log('Subscription confirmed:', connected);
+            console.log('Position reports:', count);
+            console.log('Message types:', JSON.stringify(types));
+            ws.close();
+            if (!connected) process.exitCode = 1;
+          }, 120000);
+          JS
