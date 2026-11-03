@@ -1,0 +1,141 @@
+
+name: AIS Regional Coverage Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  regional-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Install WebSocket client
+        run: npm install --no-save ws
+
+      - name: Monitor Crete and Bahamas AIS coverage
+        env:
+          AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
+        run: |
+          node <<'JS'
+          const WebSocket = require('ws');
+          const key = process.env.AISSTREAM_API_KEY;
+
+          if (!key) {
+            console.error('Missing AISSTREAM_API_KEY secret');
+            process.exit(1);
+          }
+
+          const regions = {
+            Crete: {
+              minLat: 34.0, maxLat: 37.0,
+              minLon: 23.0, maxLon: 29.0,
+              count: 0
+            },
+            Bahamas: {
+              minLat: 20.0, maxLat: 28.0,
+              minLon: -81.0, maxLon: -72.0,
+              count: 0
+            }
+          };
+
+          const ships = {
+            '310791000': 'Enchanted Princess',
+            '310869000': 'Star Princess'
+          };
+
+          let confirmed = false;
+          let total = 0;
+          let samples = 0;
+
+          const ws = new WebSocket(
+            'wss://stream.aisstream.io/v0/stream'
+          );
+
+          ws.on('open', () => {
+            console.log('Connected to AISStream');
+
+            ws.send(JSON.stringify({
+              APIKey: key,
+              BoundingBoxes: [
+                [[34.0, 23.0], [37.0, 29.0]],
+                [[20.0, -81.0], [28.0, -72.0]]
+              ],
+              FilterMessageTypes: ['PositionReport']
+            }));
+          });
+
+          ws.on('message', buf => {
+            let msg;
+            try {
+              msg = JSON.parse(buf.toString());
+            } catch {
+              return;
+            }
+
+            if (msg.MessageType === 'SubscriptionConfirmation') {
+              confirmed = true;
+              console.log('Subscription confirmed');
+              return;
+            }
+
+            if (msg.MessageType === 'Error' ||
+                msg.MessageType === 'SubscriptionError') {
+              console.error('AISStream error:', JSON.stringify(msg));
+              return;
+            }
+
+            if (msg.MessageType !== 'PositionReport') return;
+
+            const p = msg.Message?.PositionReport;
+            if (!p) return;
+
+            const lat = p.Latitude;
+            const lon = p.Longitude;
+            const mmsi = String(
+              msg.MetaData?.MMSI ?? p.UserID ?? ''
+            );
+
+            if (!Number.isFinite(lat) ||
+                !Number.isFinite(lon)) return;
+
+            total++;
+
+            for (const [name, r] of Object.entries(regions)) {
+              if (lat >= r.minLat && lat <= r.maxLat &&
+                  lon >= r.minLon && lon <= r.maxLon) {
+                r.count++;
+
+                if (samples < 10) {
+                  console.log(
+                    `${name}: MMSI=${mmsi} LAT=${lat} LON=${lon}`
+                  );
+                  samples++;
+                }
+              }
+            }
+
+            if (ships[mmsi]) {
+              console.log(
+                `PRINCESS MATCH: ${ships[mmsi]} ` +
+                `LAT=${lat} LON=${lon}`
+              );
+            }
+          });
+
+          ws.on('error', err => {
+            console.error('Connection error:', err.message);
+            process.exitCode = 1;
+          });
+
+          setTimeout(() => {
+            console.log('========== RESULTS ==========');
+            console.log('Subscription confirmed:', confirmed);
+            console.log('Total reports:', total);
+            console.log('Crete reports:', regions.Crete.count);
+            console.log('Bahamas reports:', regions.Bahamas.count);
+            console.log('=============================');
+            ws.close();
+            process.exit(confirmed ? 0 : 1);
+          }, 120000);
+          JS
