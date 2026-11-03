@@ -26,16 +26,16 @@ jobs:
           },600000);
           ws.on('open',()=>{
             console.log('WebSocket connected; sending filtered subscription.');
-            ws.send(JSON.stringify({APIKey:key,BoundingBoxes:[[[-90,-180],[90,180]]],FiltersShipMMSI:Object.keys(ships),FilterMessageTypes:['PositionReport']}));
+            ws.send(JSON.stringify({APIKey:key,BoundingBoxes:[[[-90,-180],[90,180]]],FiltersShipMMSI:Object.keys(ships),FilterMessageTypes:['PositionReport','StandardClassBPositionReport','ExtendedClassBPositionReport']}));
           });
           ws.on('message',buf=>{
             let msg; try {msg=JSON.parse(buf.toString())}catch(e){return;}
             if(msg.MessageType==='SubscriptionConfirmation') {confirmed=true; console.log('Subscription confirmed by AISStream.');return;}
             if(msg.MessageType==='Error'||msg.MessageType==='SubscriptionError') {console.error('Subscription error:',JSON.stringify(msg).slice(0,600));return;}
             const mmsi=String(msg.MetaData?.MMSI||msg.Message?.PositionReport?.UserID||'');
-            if(msg.MessageType==='PositionReport' && ships[mmsi]) {
+            if (ships[mmsi] && [   'PositionReport',   'StandardClassBPositionReport',   'ExtendedClassBPositionReport' ].includes(msg.MessageType)) {
               count++;
-              const p=msg.Message.PositionReport;
+              const p=msg.Message[msg.MessageType];
               console.log(`${ships[mmsi]}: lat=${p.Latitude} lon=${p.Longitude} AIS timestamp=${msg.MetaData?.time_utc||'not supplied'}`);
             }
           });
