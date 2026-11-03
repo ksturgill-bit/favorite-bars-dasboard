@@ -32,7 +32,7 @@ jobs:
             let msg; try {msg=JSON.parse(buf.toString())}catch(e){return;}
             if(msg.MessageType==='SubscriptionConfirmation') {confirmed=true; console.log('Subscription confirmed by AISStream.');return;}
             if(msg.MessageType==='Error'||msg.MessageType==='SubscriptionError') {console.error('Subscription error:',JSON.stringify(msg).slice(0,600));return;}
-            const mmsi=String(msg.MetaData?.MMSI||msg.Message?.PositionReport?.UserID||'');
+            const p = msg.Message?.[msg.MessageType]; const mmsi = String(msg.MetaData?.MMSI ?? p?.UserID ?? '');
             if (ships[mmsi] && [   'PositionReport',   'StandardClassBPositionReport',   'ExtendedClassBPositionReport' ].includes(msg.MessageType)) {
               count++;
               const p=msg.Message[msg.MessageType];
